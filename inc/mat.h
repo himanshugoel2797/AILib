@@ -16,6 +16,7 @@ struct mat{
 };
 
 mat_t mat_create(int, int);
+void mat_delete(mat_t);
 void mat_set(mat_t, int, int, float);
 float mat_get(mat_t, int, int);
 void mat_clear(mat_t);

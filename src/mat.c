@@ -31,6 +31,10 @@ mat_t mat_create(int width, int height) {
     return nmat;
 }
 
+void mat_delete(mat_t mat) {
+    free(mat.data);
+}
+
 void mat_set(mat_t mat, int x, int y, float val) {
     mat.data[mat.stride * x + y] = val;
 }

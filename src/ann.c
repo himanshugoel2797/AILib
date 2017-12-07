@@ -8,7 +8,36 @@
 #include "ann.h"
 #include "mat.h"
 #include <string.h>
+#include <stdint.h>
+#include <math.h>
 #include <x86intrin.h>
+
+static unsigned int seed = 0;
+#define CORNER_CNT 8
+static float corners[CORNER_CNT];
+static int prev_idx = 0;
+
+static uint8_t get_rand(){
+    seed = (seed + 1013904223) * 1664525;
+    return seed;
+}
+
+static float ann_rand(){
+    prev_idx = (prev_idx + 1) % CORNER_CNT;
+    corners[prev_idx] = fmod(get_rand(), 1024) / 1024.0f;
+
+    float avg = 0;
+    for(int i = 0; i < CORNER_CNT; i++)
+        avg += corners[i];
+
+    return avg / CORNER_CNT;
+}
+
+void ann_setseed(unsigned int s) {
+    seed = s;
+    for(int i = 0; i < CORNER_CNT; i++)
+        ann_rand();
+}
 
 ann_t ann_create(int layers, int *layer_sizes, int input_cnt, int output_cnt) {
     ann_t ann;
@@ -26,9 +55,19 @@ ann_t ann_create(int layers, int *layer_sizes, int input_cnt, int output_cnt) {
     }
     ann.max_h = max_h;
 
+    int w = input_cnt;
+
     for(int i = 0; i < layers; i++) {
+        int h = layer_sizes[i];
+
         ann.weights[i] = mat_create(max_h, max_h);
-        mat_set(ann.weights[i], 0, 0, 5);
+        for(int x = 0; x < w; x++)
+            for(int y = 0; y < h; y++){
+                float val = ann_rand();
+                mat_set(ann.weights[i], x, y, val);
+            }
+
+        w = h;
     }
 
     return ann;

@@ -20,5 +20,6 @@ struct ann {
 
 ann_t ann_create(int, int*, int, int);
 int ann_activate(ann_t, float*, float*);
+void ann_setseed(unsigned int);
 
 #endif
