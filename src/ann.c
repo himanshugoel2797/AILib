@@ -5,7 +5,9 @@
  * https://opensource.org/licenses/MIT
  */
 
+#include "ann.h"
 #include "mat.h"
+#include <string.h>
 #include <x86intrin.h>
 
 ann_t ann_create(int layers, int *layer_sizes, int input_cnt, int output_cnt) {
@@ -20,13 +22,16 @@ ann_t ann_create(int layers, int *layer_sizes, int input_cnt, int output_cnt) {
     int max_h = 0;
     for(int i = 0; i < layers; i++) {
         if(layer_sizes[i] > max_h)
-            layer_sizes[i] = max_h;
+            max_h = layer_sizes[i];
     }
     ann.max_h = max_h;
 
     for(int i = 0; i < layers; i++) {
         ann.weights[i] = mat_create(max_h, max_h);
+        mat_set(ann.weights[i], 0, 0, 5);
     }
+
+    return ann;
 }
 
 int mat_mult_softsign(mat_t a, mat_t b, mat_t *c) {
@@ -34,7 +39,13 @@ int mat_mult_softsign(mat_t a, mat_t b, mat_t *c) {
         return -1;
 
     if(a.width == 1 && a.height == 1){
-        mat_set(*c, 0, 0, mat_get(a, 0, 0) * mat_get(b, 0, 0));
+        float res = mat_get(a, 0, 0) * mat_get(b, 0, 0);
+        float abs_res = res;
+        if(res < 0)
+            abs_res = -res;
+
+        float activ = res / (1 + abs_res);
+        mat_set(*c, 0, 0, activ);
         return 0;
     }
 
@@ -87,12 +98,12 @@ int mat_mult_softsign(mat_t a, mat_t b, mat_t *c) {
 }
 
 int ann_activate(ann_t ann, float* inputs, float* outputs){
-    mat_t res = mat_create(1, max_h);
+    mat_t res = mat_create(1, ann.max_h);
     for(int i = 0; i < ann.input_count; i++) {
         mat_set(res, 0, i, inputs[i]);
     }
 
-    mat_t res2 = mat_create(1, max_h);
+    mat_t res2 = mat_create(1, ann.max_h);
     for(int i = 0; i < ann.layers; i++) {
         mat_clear(res2);
         if(mat_mult_softsign(ann.weights[i], res, &res2) != 0)
