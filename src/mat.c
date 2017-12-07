@@ -6,7 +6,6 @@
  */
 
 #include <stdlib.h>
-#include <string.h>
 #include <x86intrin.h>
 #include "mat.h"
 
@@ -18,9 +17,6 @@ mat_t mat_create(int width, int height) {
     nmat.stride = height;
     if(nmat.stride % 8 != 0)
         nmat.stride += (8 - nmat.stride % 8);
-
-    if (width < 4)
-        width = 4;
 
     size_t alloc_sz = width * nmat.stride * sizeof(float);
     
@@ -57,16 +53,13 @@ int mat_mult(mat_t a, mat_t b, mat_t *c) {
             float *src = &a.data[j];
             float *src_b = b.data;
             const int stride = a.stride;
+
+            __m256 mat_prev = _mm256_setzero_ps();
+            __m256 mat_prev1 = _mm256_setzero_ps();
+            __m256 mat_prev2 = _mm256_setzero_ps();
+            __m256 mat_prev3 = _mm256_setzero_ps();
+
             int i = 0;
-
-            __m256 mat_prev = _mm256_mul_ps(_mm256_load_ps(src), _mm256_set1_ps(*src_b));
-            __m256 mat_prev1 = _mm256_mul_ps(_mm256_load_ps(src + stride), _mm256_set1_ps(*(src_b + 1)));
-            __m256 mat_prev2 = _mm256_mul_ps(_mm256_load_ps(src + 2 * stride), _mm256_set1_ps(*(src_b + 2)));
-            __m256 mat_prev3 = _mm256_mul_ps(_mm256_load_ps(src + 3 * stride), _mm256_set1_ps(*(src_b + 3)));
-
-            src += 4 * stride;
-            src_b += 4;
-            i += 4;
 
             for(; i + 4 < a.width; i+=4){
                 mat_prev = _mm256_fmadd_ps(_mm256_load_ps(src), _mm256_set1_ps(*src_b), mat_prev);
@@ -78,18 +71,17 @@ int mat_mult(mat_t a, mat_t b, mat_t *c) {
                 src_b += 4;
             }
 
+            mat_prev = _mm256_add_ps(mat_prev, mat_prev1);
+            mat_prev2 = _mm256_add_ps(mat_prev2, mat_prev3);
+
             switch(a.width - (i + 1)) {
                 case 3: mat_prev = _mm256_fmadd_ps(_mm256_load_ps(src), _mm256_set1_ps(*src_b), mat_prev);
-                case 2: mat_prev1 = _mm256_fmadd_ps(_mm256_load_ps(src + stride), _mm256_set1_ps(*(src_b + 1)), mat_prev1);
-                case 1: mat_prev2 = _mm256_fmadd_ps(_mm256_load_ps(src + 2 * stride), _mm256_set1_ps(*(src_b + 2)), mat_prev2);
+                case 2: mat_prev2 = _mm256_fmadd_ps(_mm256_load_ps(src + stride), _mm256_set1_ps(*(src_b + 1)), mat_prev2);
+                case 1: mat_prev = _mm256_fmadd_ps(_mm256_load_ps(src + 2 * stride), _mm256_set1_ps(*(src_b + 2)), mat_prev);
                 case 0: ;
             }
 
-            mat_prev = _mm256_add_ps(mat_prev, mat_prev1);
-            mat_prev2 = _mm256_add_ps(mat_prev2, mat_prev3);
-            mat_prev = _mm256_add_ps(mat_prev, mat_prev2);
-
-            _mm256_store_ps(&c->data[j], mat_prev);
+            _mm256_store_ps(&c->data[j], _mm256_add_ps(mat_prev, mat_prev2));
         }
         return 0;
     }
