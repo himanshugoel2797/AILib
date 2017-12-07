@@ -6,12 +6,14 @@
  */
 
 #include "mat.h"
+#include "ann.h"
 
 #include <stdio.h>
 #include <time.h>
 
-int main(){
+int mat_mult_softsign(mat_t a, mat_t b, mat_t *c);
 
+int main(){
     mat_t a = mat_create(20, 20);
     mat_set(a, 0, 0, 1);
     mat_set(a, 1, 0, 2);
@@ -28,7 +30,7 @@ int main(){
     clock_gettime(CLOCK_REALTIME, &start_time);
 
     for(long i = 0; i < 500000000; i++){
-        mat_mult(a, b, &res);
+        mat_mult_softsign(a, b, &res);
     }
 
     struct timespec end_time;

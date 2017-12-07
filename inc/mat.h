@@ -11,12 +11,14 @@ struct mat{
     int width;
     int height;
     int stride;
+    int alloc_sz;
     float *data;
 };
 
 mat_t mat_create(int, int);
 void mat_set(mat_t, int, int, float);
 float mat_get(mat_t, int, int);
+void mat_clear(mat_t);
 int mat_mult(mat_t, mat_t, mat_t*);
 
 #endif

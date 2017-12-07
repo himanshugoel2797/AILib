@@ -6,6 +6,7 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 #include <x86intrin.h>
 #include "mat.h"
 
@@ -23,6 +24,7 @@ mat_t mat_create(int width, int height) {
     if(alloc_sz % 32 != 0)
         alloc_sz += (32 - alloc_sz % 32);
 
+    nmat.alloc_sz = alloc_sz;
     nmat.data = aligned_alloc(32, alloc_sz);
     memset(nmat.data, 0, alloc_sz);
 
@@ -35,6 +37,10 @@ void mat_set(mat_t mat, int x, int y, float val) {
 
 float mat_get(mat_t mat, int x, int y) {
     return mat.data[mat.stride * x + y];
+}
+
+void mat_clear(mat_t mat) {
+    memset(mat.data, 0, mat.alloc_sz);
 }
 
 int mat_mult(mat_t a, mat_t b, mat_t *c) {
