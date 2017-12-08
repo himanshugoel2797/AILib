@@ -11,14 +11,13 @@
 typedef struct ann ann_t;
 struct ann {
     int layers;
-    int input_count;
-    int output_count;
-    int max_h;
+    float learning_rate;
     int *layer_sizes;
     mat_t *weights;
+    mat_t *biases;
 };
 
-ann_t ann_create(int, int*, int);
+ann_t ann_create(int, int*, float);
 int ann_activate(ann_t, float*, float*);
 void ann_setseed(unsigned int);
 void ann_randomizelayer(ann_t, int);

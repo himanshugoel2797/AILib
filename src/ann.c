@@ -39,26 +39,32 @@ void ann_setseed(unsigned int s) {
         ann_rand();
 }
 
-ann_t ann_create(int layers, int *layer_sizes, int input_cnt) {
+ann_t ann_create(int layers, int *layer_sizes, float learning_rate) {
     ann_t ann;
     ann.layers = layers;
+    ann.learning_rate = learning_rate;
     ann.layer_sizes = malloc(layers * sizeof(int));
     ann.weights = malloc(layers * sizeof(mat_t));
+    ann.biases = malloc(layers * sizeof(mat_t));
+
     memcpy(ann.layer_sizes, layer_sizes, layers * sizeof(int));
-    ann.input_count = input_cnt;
-    ann.output_count = layer_sizes[layers - 1];
+    
+    int w = layer_sizes[0];
 
-    int w = input_cnt;
-
-    for(int i = 0; i < layers; i++) {
+    for(int i = 1; i < layers; i++) {
         int h = layer_sizes[i];
 
+        ann.biases[i] = mat_create(1, h);
         ann.weights[i] = mat_create(w, h);
-        for(int x = 0; x < w; x++)
-            for(int y = 0; y < h; y++){
+        for(int y = 0; y < h; y++){
+            float val = ann_rand();
+            mat_set(ann.biases[i], 0, y, val);
+
+            for(int x = 0; x < w; x++){
                 float val = ann_rand();
                 mat_set(ann.weights[i], x, y, val);
             }
+        }
 
         w = h;
     }
@@ -66,39 +72,13 @@ ann_t ann_create(int layers, int *layer_sizes, int input_cnt) {
     return ann;
 }
 
-void ann_randomizelayer(ann_t ann, int layer) {
-    int w = ann.input_count;
-
-    for(int i = 0; i < ann.layers; i++) {
-        int h = ann.layer_sizes[i];
-
-        if(i == layer){
-            for(int x = 0; x < w; x++)
-                for(int y = 0; y < h; y++){
-                    float val = ann_rand();
-                    mat_set(ann.weights[i], x, y, val);
-                }
-        }
-
-        w = h;
-    }
-}
-
-mat_t ann_getlayer(ann_t ann, int layer) {
-    return ann.weights[layer];
-}
-
-void ann_setlayer(ann_t ann, int layer, mat_t val) {
-    for(int x = 0; x < ann.max_h; x++)
-        for(int y = 0; y < ann.max_h; y++)
-            mat_set(ann.weights[layer], x, y, mat_get(val, x, y));
-}
-
 void ann_delete(ann_t ann) {
     free(ann.layer_sizes);
 
-    for(int i = 0; i < ann.layers; i++)
+    for(int i = 0; i < ann.layers; i++){
         mat_delete(ann.weights[i]);
+        mat_delete(ann.biases[i]);
+    }
 
     free(ann.weights);
 }
@@ -115,7 +95,7 @@ static void ann_softsign(mat_t a, mat_t *c) {
     }
 }
 
-static void ann_output_error(mat_t expected, mat_t output, mat_t *c) {
+static void ann_output_error(mat_t expected, mat_t output, mat_t z, mat_t *c) {
 
     __m256 mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF));
     __m256 one = _mm256_set1_ps(1);
@@ -123,12 +103,14 @@ static void ann_output_error(mat_t expected, mat_t output, mat_t *c) {
     for(int i = 0; i < expected.stride; i+=8) {
         __m256 expected_v = _mm256_load_ps(&expected.data[i]);
         __m256 output_v = _mm256_load_ps(&output.data[i]);
+        __m256 z_v = _mm256_load_ps(&z.data[i]);
+
 
         //take the difference and put it in one register
         __m256 diff = _mm256_sub_ps(output_v, expected_v);
 
         //compute the softsign_deriv for the output
-        __m256 net = _mm256_add_ps(_mm256_and_ps(output_v, mask), one);
+        __m256 net = _mm256_add_ps(_mm256_and_ps(z_v, mask), one);
         __m256 softsign_deriv = _mm256_rcp_ps(_mm256_mul_ps(net, net));
 
         //multiply the two
@@ -157,14 +139,14 @@ static void ann_hadamard(mat_t a, mat_t z, mat_t *c) {
 }
 
 int ann_activate(ann_t ann, float* inputs, float* outputs){
-    mat_t res = mat_create(1, ann.input_count);
-    for(int i = 0; i < ann.input_count; i++) {
+    mat_t res = mat_create(1, ann.layer_sizes[0]);
+    for(int i = 0; i < ann.layer_sizes[0]; i++) {
         mat_set(res, 0, i, inputs[i]);
     }
 
-    for(int i = 0; i < ann.layers; i++) {
+    for(int i = 1; i < ann.layers; i++) {
         mat_t res2 = mat_create(1, ann.layer_sizes[i]);
-        if(mat_mult(ann.weights[i], res, &res2) != 0)
+        if(mat_multadd(ann.weights[i], res, ann.biases[i] , &res2) != 0)
             return -1;
 
         ann_softsign(res2, &res2);
@@ -173,9 +155,10 @@ int ann_activate(ann_t ann, float* inputs, float* outputs){
         res = res2;
     }
 
-    for(int i = 0; i < ann.output_count; i++) {
+    for(int i = 0; i < ann.layer_sizes[ann.layers - 1]; i++) {
         outputs[i] = mat_get(res, 0, i);
     }
+    mat_delete(res);
 
     return 0;
 }
@@ -186,62 +169,69 @@ float trans_deriv(float o) {
 
 int ann_train(ann_t ann, float* input, float *expected_outputs) {
 
-    mat_t *errors = malloc((ann.layers + 1) * sizeof(mat_t));
-    mat_t *z = malloc((ann.layers + 1) * sizeof(mat_t));
-    mat_t *a = malloc((ann.layers + 1) * sizeof(mat_t));
+    mat_t *errors = malloc(ann.layers * sizeof(mat_t));
+    mat_t *z = malloc(ann.layers * sizeof(mat_t));
+    mat_t *a = malloc(ann.layers * sizeof(mat_t));
 
-    mat_t expect_output_vec = mat_create(1, ann.output_count);
-    for(int i = 0; i < ann.output_count; i++)
+    mat_t expect_output_vec = mat_create(1, ann.layer_sizes[ann.layers - 1]);
+    for(int i = 0; i < ann.layer_sizes[ann.layers - 1]; i++)
         mat_set(expect_output_vec, 0, i, expected_outputs[i]);
 
-
-    //Setup output vector
-    z[ann.layers] = mat_create(1, ann.layer_sizes[ann.layers - 1]);
-
     //Setup input vector
-    a[0] = mat_create(1, ann.input_count);
-    for(int i = 0; i < ann.input_count; i++)
+    a[0] = mat_create(1, ann.layer_sizes[0]);
+    for(int i = 0; i < ann.layer_sizes[0]; i++)
         mat_set(a[0], 0, i, input[i]);
 
-    for(int i = 0; i < ann.layers; i++) {
-        z[i] = mat_create(1, ann.layer_sizes[i]);
+    //Feedforward
+    for(int i = 1; i < ann.layers; i++) {
+        z[i - 1] = mat_create(1, ann.layer_sizes[i]);
         a[i] = mat_create(1, ann.layer_sizes[i]);
-
-        if(i + 1 < ann.layers)
-            z[i + 1] = mat_create(1, ann.layer_sizes[i + 1]);
-
         errors[i] = mat_create(1, ann.layer_sizes[i]);
 
-        if(mat_mult(ann.weights[i], a[i], &z[i + 1]) != 0)
+        if(mat_multadd(ann.weights[i], a[i - 1], ann.biases[i], &z[i - 1]) != 0)
             return -1;
-        ann_softsign(z[i + 1], &a[i + 1]);
+        ann_softsign(z[i - 1], &a[i]);
     }
 
     //compute the output error
     //(output - expected_output) hadamard trans_deriv(output)
-    ann_output_error(expect_output_vec, a[ann.layers], &errors[ann.layers]);
+    ann_output_error(expect_output_vec, a[ann.layers - 1], z[ann.layers - 2], &errors[ann.layers - 1]);
 
     //backpropagate the error
-    for(int i = ann.layers - 1; i > 0; i--){
+    for(int i = ann.layers - 2; i > 0; i--){
         mat_t w_trans = mat_create(ann.weights[i + 1].height, ann.weights[i + 1].width);
         mat_transpose(ann.weights[i + 1], &w_trans);
 
-        if(mat_mult(w_trans, errors[i + 1], &errors[i]) != 0){
-            printf("ERROR");
-            return -1;
-        }
+        mat_mult(w_trans, errors[i + 1], &errors[i]);
+        ann_hadamard(errors[i], z[i - 1], &errors[i]);
 
-        ann_hadamard(errors[i], z[i], &errors[i]);
-    }
-    
-    for(int i = ann.layers - 1; i > 0; i--) {
         mat_t a_trans = mat_create(a[i - 1].height, a[i - 1].width);
-        mat_t nabla = mat_create(1, 1);
+        mat_t nabla_w = mat_create(errors[i].width, a_trans.height);
 
         mat_transpose(a[i], &a_trans);
-        mat_mult(errors[i], a_trans, &nabla);
-        mat_subscalar(ann.weights[i], 0.05 * mat_get(nabla, 0, 0), &ann.weights[i]);
+        mat_mult(errors[i], a_trans, &nabla_w);
+        mat_subscalar(ann.weights[i], ann.learning_rate * mat_get(nabla_w, 0, 0), &ann.weights[i]);
+        //mat_subscalar(ann.biases[i], 0.05 * mat_get(errors[i], 0, 0), &ann.biases[i]);
+
+        for(int k = 0; k < ann.biases[i].height; k++) {
+            mat_set(ann.biases[i], 0, k, mat_get(ann.biases[i], 0, k) - ann.learning_rate * mat_get(errors[i], 0, k));
+        }
+
+        mat_delete(w_trans);
+        mat_delete(a_trans);
+        mat_delete(nabla_w);
     }
+
+    for(int i = 0; i < ann.layers; i++){
+        mat_delete(a[i]);
+        mat_delete(z[i]);
+        mat_delete(errors[i]);
+    }
+
+    mat_delete(expect_output_vec);
+    free(a);
+    free(z);
+    free(errors);
 
     return 0;
 
