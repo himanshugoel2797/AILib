@@ -56,12 +56,12 @@ int mat_mult(mat_t a, mat_t b, mat_t *c) {
         return 0;
     }
 
-    if(b.width == 1) {  //Vector and matrix multiplication
-
+    //matrix multiplication
+    for(int q = 0; q < b.width; q++){
         for(int j = 0; j < a.stride; j+= 8){
 
             float *src = &a.data[j];
-            float *src_b = b.data;
+            float *src_b = &b.data[b.stride * q];
             const int stride = a.stride;
 
             __m256 mat_prev = _mm256_setzero_ps();

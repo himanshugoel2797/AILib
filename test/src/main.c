@@ -16,11 +16,11 @@ int main(){
     ann_setseed(1);
 
 
-    float inputs[4][2] = {{0, 0}, {0.0, 1}, {1, 0}, {1, 1}};
-    float outputs[4][2] = {{0, 1}, {1, 0}, {1, 0}, {0, 1}};
+    float inputs[4][2] = {{0, 0}, {1, 1}, {1, 0}, {0, 1}};
+    float outputs[4][2] = {{0, 0}, {0, 0}, {1, 1}, {1, 1}};
 
-    int layers[] = {2, 4, 2};
-    ann_t net = ann_create(3, layers, 0.05 / 4);
+    int layers[] = {2, 2, 2};
+    ann_t net = ann_create(3, layers, 0.05);
 
     for(int k = 0; k < 5; k++){
         for(int i = 0; i < 4; i++){
@@ -29,10 +29,9 @@ int main(){
                 printf("ERROR\r\n");
             
             printf("RESULT0:%f\r\n", res[0] );
-            printf("RESULT1:%f\r\n", res[1] );
         }
 
-        for(int i = 0; i < 5000; i++){
+        for(int i = 0; i < 50000; i++){
             if(ann_train(net, inputs[i % 4], outputs[i % 4]) != 0)
                 printf("ERROR\r\n");
         }
