@@ -18,8 +18,12 @@ struct ann {
     mat_t *weights;
 };
 
-ann_t ann_create(int, int*, int, int);
+ann_t ann_create(int, int*, int);
 int ann_activate(ann_t, float*, float*);
 void ann_setseed(unsigned int);
+void ann_randomizelayer(ann_t, int);
+mat_t ann_getlayer(ann_t, int);
+void ann_setlayer(ann_t, int, mat_t);
+void ann_delete(ann_t);
 
 #endif

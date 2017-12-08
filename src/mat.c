@@ -69,9 +69,10 @@ int mat_mult(mat_t a, mat_t b, mat_t *c) {
             __m256 mat_prev2 = _mm256_setzero_ps();
             __m256 mat_prev3 = _mm256_setzero_ps();
 
-            int i = 0;
+            int repeat = a.width / 4;
+            int left = a.width % 4;
 
-            for(; i + 4 < a.width; i+=4){
+            while(repeat--){
                 mat_prev = _mm256_fmadd_ps(_mm256_load_ps(src), _mm256_set1_ps(*src_b), mat_prev);
                 mat_prev1 = _mm256_fmadd_ps(_mm256_load_ps(src + stride), _mm256_set1_ps(*(src_b + 1)), mat_prev1);
                 mat_prev2 = _mm256_fmadd_ps(_mm256_load_ps(src + 2 * stride), _mm256_set1_ps(*(src_b + 2)), mat_prev2);
@@ -84,10 +85,10 @@ int mat_mult(mat_t a, mat_t b, mat_t *c) {
             mat_prev = _mm256_add_ps(mat_prev, mat_prev1);
             mat_prev2 = _mm256_add_ps(mat_prev2, mat_prev3);
 
-            switch(a.width - (i + 1)) {
-                case 3: mat_prev = _mm256_fmadd_ps(_mm256_load_ps(src), _mm256_set1_ps(*src_b), mat_prev);
+            switch(left) {
+                case 3: mat_prev = _mm256_fmadd_ps(_mm256_load_ps(src + 2 * stride), _mm256_set1_ps(*(src_b + 2)), mat_prev);
                 case 2: mat_prev2 = _mm256_fmadd_ps(_mm256_load_ps(src + stride), _mm256_set1_ps(*(src_b + 1)), mat_prev2);
-                case 1: mat_prev = _mm256_fmadd_ps(_mm256_load_ps(src + 2 * stride), _mm256_set1_ps(*(src_b + 2)), mat_prev);
+                case 1: mat_prev = _mm256_fmadd_ps(_mm256_load_ps(src), _mm256_set1_ps(*src_b), mat_prev);
                 case 0: ;
             }
 
@@ -97,4 +98,63 @@ int mat_mult(mat_t a, mat_t b, mat_t *c) {
     }
 
     return -1;
+}
+
+int mat_transpose(mat_t a, mat_t *c) {
+    if(a.width != c->height)
+        return -1;
+
+    if(a.height != c->width)
+        return -1;
+
+    for(int x = 0; x < a.width; x++)
+        for(int y = 0; y < a.height; y++)
+            mat_set(*c, y, x, mat_get(a, x, y));
+
+    return 0;
+}
+
+int mat_subscalar(mat_t a, float v, mat_t *c) {
+    __m256 sub = _mm256_set1_ps(v);
+    for(int i = 0; i < a.stride; i+=8) {
+
+        float *src_a = &a.data[i];
+        float *dst_c = &c->data[i];
+
+        int repeat = a.width / 4;
+        int left = a.width % 4;
+        int stride = a.stride;
+
+        while(repeat--) {
+            _mm256_store_ps(dst_c, _mm256_sub_ps(_mm256_load_ps(src_a), sub));
+            _mm256_store_ps(dst_c + stride, _mm256_sub_ps(_mm256_load_ps(src_a + stride), sub));
+            _mm256_store_ps(dst_c + 2 * stride, _mm256_sub_ps(_mm256_load_ps(src_a + 2 * stride), sub));
+            _mm256_store_ps(dst_c + 3 * stride, _mm256_sub_ps(_mm256_load_ps(src_a + 3 * stride), sub));
+
+            dst_c += 4 * stride;
+            src_a += 4 * stride;
+        }
+
+        switch(left) {
+            case 3:_mm256_store_ps(dst_c + 2 * stride, _mm256_sub_ps(_mm256_load_ps(src_a + 2 * stride), sub));
+            case 2:_mm256_store_ps(dst_c + stride, _mm256_sub_ps(_mm256_load_ps(src_a + stride), sub));
+            case 1:_mm256_store_ps(dst_c, _mm256_sub_ps(_mm256_load_ps(src_a), sub));
+            case 0: ;
+        }
+
+        return 0;
+    }
+    return -1;
+}
+
+int mat_hadamard(mat_t a, mat_t b, mat_t *c) {
+    for(int i = 0; i < a.stride; i+=8) {
+        __m256 a_v = _mm256_load_ps(&a.data[i]);
+        __m256 b_v = _mm256_load_ps(&b.data[i]);
+
+        //multiply the two
+        __m256 res = _mm256_mul_ps(a_v, b_v);
+        _mm256_store_ps(&c->data[i], res);
+    }
+    return 0;
 }

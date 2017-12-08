@@ -21,5 +21,6 @@ void mat_set(mat_t, int, int, float);
 float mat_get(mat_t, int, int);
 void mat_clear(mat_t);
 int mat_mult(mat_t, mat_t, mat_t*);
+int mat_transpose(mat_t, mat_t*);
 
 #endif
