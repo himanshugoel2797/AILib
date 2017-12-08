@@ -15,29 +15,32 @@ int main(){
     
     ann_setseed(0);
 
-    int layers[] = {2,4,4};
-    ann_t net = ann_create(3, layers, 0.05);
 
-    float inputs[4][2] = {{0, 0}, {0, 1}, {1, 0}, {1, 1}};
-    float outputs[4][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
+    float inputs[4][2] = {{0, 0}, {0.0, 0.25}, {0.5, 0}, {0.5, 0.5}};
+    float outputs[4][1] = {{0}, {0.25}, {0.5}, {1}};
 
-        for(int i = 0; i < 1000000; i++){
-            if(ann_train(net, inputs[0], outputs[0]) != 0)
-                printf("ERROR\r\n");
-        }
+    int layers[] = {2, 1};
+    ann_t net = ann_create(2, layers, 0.05);
 
-
+    for(int k = 0; k < 5; k++){
         for(int i = 0; i < 4; i++){
-            float res[4];
-            if(ann_activate(net, inputs[i], res) != 0)
+            float in[2] = {0.5, 0.25};
+            float res[1];
+            if(ann_activate(net, in, res) != 0)
                 printf("ERROR\r\n");
             
             printf("RESULT0:%f\r\n", res[0] );
-            printf("RESULT1:%f\r\n", res[1] );
-            printf("RESULT2:%f\r\n", res[2] );
-            printf("RESULT3:%f\r\n", res[3] );
-            printf("\r\n\r\n");
         }
+
+        for(int i = 0; i < 1000000; i++){
+            if(ann_train(net, inputs[i % 4], outputs[i % 4]) != 0)
+                printf("ERROR\r\n");
+        }
+
+        printf("\r\n\r\n");
+
+    }
+        ann_delete(net);
 
 /*
     mat_t a = mat_create(1, 2);

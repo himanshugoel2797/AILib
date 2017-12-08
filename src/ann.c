@@ -75,7 +75,7 @@ ann_t ann_create(int layers, int *layer_sizes, float learning_rate) {
 void ann_delete(ann_t ann) {
     free(ann.layer_sizes);
 
-    for(int i = 0; i < ann.layers; i++){
+    for(int i = 1; i < ann.layers; i++){
         mat_delete(ann.weights[i]);
         mat_delete(ann.biases[i]);
     }
@@ -196,6 +196,22 @@ int ann_train(ann_t ann, float* input, float *expected_outputs) {
     //compute the output error
     //(output - expected_output) hadamard trans_deriv(output)
     ann_output_error(expect_output_vec, a[ann.layers - 1], z[ann.layers - 2], &errors[ann.layers - 1]);
+    {
+        mat_t a_trans = mat_create(a[ann.layers - 1].height, a[ann.layers - 1].width);
+        mat_t nabla_w = mat_create(errors[ann.layers - 1].width, a_trans.height);
+
+        mat_transpose(a[ann.layers - 1], &a_trans);
+        mat_mult(errors[ann.layers - 1], a_trans, &nabla_w);
+        mat_subscalar(ann.weights[ann.layers - 1], ann.learning_rate * mat_get(nabla_w, 0, 0), &ann.weights[ann.layers - 1]);
+        
+        for(int k = 0; k < ann.biases[ann.layers - 1].height; k++) {
+            mat_set(ann.biases[ann.layers - 1], 0, k, mat_get(ann.biases[ann.layers - 1], 0, k) - ann.learning_rate * mat_get(errors[ann.layers - 1], 0, k));
+        }
+
+        mat_delete(a_trans);
+        mat_delete(nabla_w);
+    }
+
 
     //backpropagate the error
     for(int i = ann.layers - 2; i > 0; i--){
@@ -211,8 +227,7 @@ int ann_train(ann_t ann, float* input, float *expected_outputs) {
         mat_transpose(a[i], &a_trans);
         mat_mult(errors[i], a_trans, &nabla_w);
         mat_subscalar(ann.weights[i], ann.learning_rate * mat_get(nabla_w, 0, 0), &ann.weights[i]);
-        //mat_subscalar(ann.biases[i], 0.05 * mat_get(errors[i], 0, 0), &ann.biases[i]);
-
+        
         for(int k = 0; k < ann.biases[i].height; k++) {
             mat_set(ann.biases[i], 0, k, mat_get(ann.biases[i], 0, k) - ann.learning_rate * mat_get(errors[i], 0, k));
         }
@@ -224,7 +239,11 @@ int ann_train(ann_t ann, float* input, float *expected_outputs) {
 
     for(int i = 0; i < ann.layers; i++){
         mat_delete(a[i]);
+
+        if (i + 1 < ann.layers)
         mat_delete(z[i]);
+
+        if(i > 0)
         mat_delete(errors[i]);
     }
 
