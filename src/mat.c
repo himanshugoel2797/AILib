@@ -118,7 +118,7 @@ int mat_multadd(mat_t a, mat_t b, mat_t d, mat_t *c) {
             float *src_b = b.data;
             const int stride = a.stride;
 
-            __m256 mat_prev = _mm256_set1_ps(*src_d);
+            __m256 mat_prev = _mm256_load_ps(src_d);
             __m256 mat_prev1 = _mm256_setzero_ps();
             __m256 mat_prev2 = _mm256_setzero_ps();
             __m256 mat_prev3 = _mm256_setzero_ps();

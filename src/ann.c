@@ -89,9 +89,11 @@ static void ann_softsign(mat_t a, mat_t *c) {
     __m256 one = _mm256_set1_ps(1);
 
     for(int i = 0; i < a.stride; i+=8) {
-        __m256 mat_net = _mm256_load_ps(&a.data[i]);
-        mat_net = _mm256_mul_ps(_mm256_rcp_ps(_mm256_add_ps(_mm256_and_ps(mat_net, mask), one)), mat_net);
-        _mm256_store_ps(&c->data[i], mat_net);
+        for(int j = 0; j < a.width; j++) {
+            __m256 mat_net = _mm256_load_ps(&a.data[a.stride * j + i]);
+            mat_net = _mm256_mul_ps(_mm256_rcp_ps(_mm256_add_ps(_mm256_and_ps(mat_net, mask), one)), mat_net);
+            _mm256_store_ps(&c->data[c->stride * j + i], mat_net);
+        }
     }
 }
 
@@ -101,21 +103,23 @@ static void ann_output_error(mat_t expected, mat_t output, mat_t z, mat_t *c) {
     __m256 one = _mm256_set1_ps(1);
 
     for(int i = 0; i < expected.stride; i+=8) {
-        __m256 expected_v = _mm256_load_ps(&expected.data[i]);
-        __m256 output_v = _mm256_load_ps(&output.data[i]);
-        __m256 z_v = _mm256_load_ps(&z.data[i]);
+        for(int j = 0; j < expected.width; j++){
+            __m256 expected_v = _mm256_load_ps(&expected.data[expected.stride * j + i]);
+            __m256 output_v = _mm256_load_ps(&output.data[output.stride * j + i]);
+            __m256 z_v = _mm256_load_ps(&z.data[z.stride * j + i]);
 
 
-        //take the difference and put it in one register
-        __m256 diff = _mm256_sub_ps(output_v, expected_v);
+            //take the difference and put it in one register
+            __m256 diff = _mm256_sub_ps(output_v, expected_v);
 
-        //compute the softsign_deriv for the output
-        __m256 net = _mm256_add_ps(_mm256_and_ps(z_v, mask), one);
-        __m256 softsign_deriv = _mm256_rcp_ps(_mm256_mul_ps(net, net));
+            //compute the softsign_deriv for the output
+            __m256 net = _mm256_add_ps(_mm256_and_ps(z_v, mask), one);
+            __m256 softsign_deriv = _mm256_rcp_ps(_mm256_mul_ps(net, net));
 
-        //multiply the two
-        __m256 res = _mm256_mul_ps(diff, softsign_deriv);
-        _mm256_store_ps(&c->data[i], res);
+            //multiply the two
+            __m256 res = _mm256_mul_ps(diff, softsign_deriv);
+            _mm256_store_ps(&c->data[c->stride * j + i], res);
+        }
     }
 } 
 
@@ -125,16 +129,18 @@ static void ann_hadamard(mat_t a, mat_t z, mat_t *c) {
     __m256 one = _mm256_set1_ps(1);
 
     for(int i = 0; i < a.stride; i+=8) {
-        __m256 a_v = _mm256_load_ps(&a.data[i]);
-        __m256 z_v = _mm256_load_ps(&z.data[i]);
+        for(int j = 0; j < a.width; j++) {
+            __m256 a_v = _mm256_load_ps(&a.data[a.stride * j + i]);
+            __m256 z_v = _mm256_load_ps(&z.data[z.stride * j + i]);
 
-        //compute the softsign_deriv for the output
-        __m256 net = _mm256_add_ps(_mm256_and_ps(z_v, mask), one);
-        __m256 softsign_deriv = _mm256_rcp_ps(_mm256_mul_ps(net, net));
+            //compute the softsign_deriv for the output
+            __m256 net = _mm256_add_ps(_mm256_and_ps(z_v, mask), one);
+            __m256 softsign_deriv = _mm256_rcp_ps(_mm256_mul_ps(net, net));
 
-        //multiply the two
-        __m256 res = _mm256_mul_ps(a_v, softsign_deriv);
-        _mm256_store_ps(&c->data[i], res);
+            //multiply the two
+            __m256 res = _mm256_mul_ps(a_v, softsign_deriv);
+            _mm256_store_ps(&c->data[c->stride * j + i], res);
+        }
     }
 }
 
@@ -195,14 +201,15 @@ int ann_train(ann_t ann, float* input, float *expected_outputs) {
 
     //compute the output error
     //(output - expected_output) hadamard trans_deriv(output)
+    mat_t n_weights = mat_create(ann.weights[ann.layers - 1].width, ann.weights[ann.layers - 1].height);
     ann_output_error(expect_output_vec, a[ann.layers - 1], z[ann.layers - 2], &errors[ann.layers - 1]);
     {
         mat_t a_trans = mat_create(a[ann.layers - 1].height, a[ann.layers - 1].width);
         mat_t nabla_w = mat_create(errors[ann.layers - 1].width, a_trans.height);
 
         mat_transpose(a[ann.layers - 1], &a_trans);
-        mat_mult(errors[ann.layers - 1], a_trans, &nabla_w);
-        mat_subscalar(ann.weights[ann.layers - 1], ann.learning_rate * mat_get(nabla_w, 0, 0), &ann.weights[ann.layers - 1]);
+        mat_mult(a_trans, errors[ann.layers - 1], &nabla_w);
+        mat_subscalar(ann.weights[ann.layers - 1], ann.learning_rate * mat_get(nabla_w, 0, 0), &n_weights);
         
         for(int k = 0; k < ann.biases[ann.layers - 1].height; k++) {
             mat_set(ann.biases[ann.layers - 1], 0, k, mat_get(ann.biases[ann.layers - 1], 0, k) - ann.learning_rate * mat_get(errors[ann.layers - 1], 0, k));
@@ -218,16 +225,21 @@ int ann_train(ann_t ann, float* input, float *expected_outputs) {
         mat_t w_trans = mat_create(ann.weights[i + 1].height, ann.weights[i + 1].width);
         mat_transpose(ann.weights[i + 1], &w_trans);
 
+        memcpy(ann.weights[i + 1].data, n_weights.data, n_weights.alloc_sz);
+        mat_delete(n_weights);
+        n_weights = mat_create(ann.weights[i].width, ann.weights[i].height);
+
         mat_mult(w_trans, errors[i + 1], &errors[i]);
         ann_hadamard(errors[i], z[i - 1], &errors[i]);
 
         mat_t a_trans = mat_create(a[i - 1].height, a[i - 1].width);
         mat_t nabla_w = mat_create(errors[i].width, a_trans.height);
 
-        mat_transpose(a[i], &a_trans);
-        mat_mult(errors[i], a_trans, &nabla_w);
-        mat_subscalar(ann.weights[i], ann.learning_rate * mat_get(nabla_w, 0, 0), &ann.weights[i]);
+        mat_transpose(a[i - 1], &a_trans);
+        mat_mult(a_trans, errors[i], &nabla_w);
+        mat_subscalar(ann.weights[i], ann.learning_rate * mat_get(nabla_w, 0, 0), &n_weights);
         
+
         for(int k = 0; k < ann.biases[i].height; k++) {
             mat_set(ann.biases[i], 0, k, mat_get(ann.biases[i], 0, k) - ann.learning_rate * mat_get(errors[i], 0, k));
         }
@@ -236,6 +248,10 @@ int ann_train(ann_t ann, float* input, float *expected_outputs) {
         mat_delete(a_trans);
         mat_delete(nabla_w);
     }
+
+    memcpy(ann.weights[1].data, n_weights.data, n_weights.alloc_sz);
+    mat_delete(n_weights);
+        
 
     for(int i = 0; i < ann.layers; i++){
         mat_delete(a[i]);
